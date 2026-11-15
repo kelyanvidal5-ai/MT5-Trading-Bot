@@ -78,13 +78,18 @@ class ReplayFeed(MarketDataSource):
             raise BrokerError(f"timeframe {timeframe} is finer than the feed's base {self.base_tf}")
         vis = self._visible(symbol)
         # Bars that are still forming at `now` must not expose their future
-        # high/low/close: only fully completed base bars are aggregated.
+        # high/low/close: only fully completed base bars are aggregated, and
+        # only fully completed higher-timeframe bars are returned.
         complete = vis[vis.index + self._step <= self._now]
-        key = (symbol, timeframe, len(complete))
+        if timeframe == self.base_tf:
+            return complete.iloc[-count:]
+        step = pd.Timedelta(minutes=Timeframe(timeframe).minutes)
+        key = (symbol, timeframe, self._now.floor(step) if step <= pd.Timedelta(hours=4) else len(complete) // 12)
         if key not in self._cache:
-            if len(self._cache) > 64:
+            if len(self._cache) > 256:
                 self._cache.clear()
-            self._cache[key] = complete if timeframe == self.base_tf else resample(complete, timeframe)
+            frame = resample(complete, timeframe)
+            self._cache[key] = frame[frame.index + step <= self._now]
         return self._cache[key].iloc[-count:]
 
     def tick(self, symbol: str) -> Tick:

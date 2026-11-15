@@ -219,9 +219,10 @@ class Database:
         return rows[0] if rows else None
 
     def count_orders_since(self, since: datetime, statuses: tuple[str, ...] = ("filled", "placed")) -> int:
+        """Orders whose SIGNAL time (broker clock) is at or after ``since``."""
         marks = ",".join("?" * len(statuses))
         rows = self.query(
-            f"SELECT COUNT(*) AS n FROM orders WHERE created_at>=? AND status IN ({marks})",
+            f"SELECT COUNT(*) AS n FROM orders WHERE signal_time>=? AND status IN ({marks})",
             (_iso(since), *statuses))
         return int(rows[0]["n"])
 

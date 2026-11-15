@@ -56,6 +56,16 @@ class StrategyConfig(_Model):
     use_meta_model: bool = True
 
 
+class Blackout(_Model):
+    """Operator-declared no-trade window (e.g. an election, a summit, a
+    geopolitical shock). Times are ISO-8601 UTC."""
+
+    start: str
+    end: str
+    currencies: list[str] = Field(default_factory=list)    # empty = every instrument
+    reason: str = "manual blackout"
+
+
 class NewsConfig(_Model):
     enabled: bool = True
     providers: list[str] = Field(default_factory=lambda: ["faireconomy"])
@@ -69,6 +79,8 @@ class NewsConfig(_Model):
     # If the calendar cannot be fetched for this long, new entries are suspended.
     stale_after_hours: int = Field(36, ge=1)
     fail_closed: bool = True
+    manual_blackouts: list[Blackout] = Field(default_factory=list)
+    headline_feeds: bool = False                  # official central-bank RSS feeds (informational)
 
 
 class SessionConfig(_Model):

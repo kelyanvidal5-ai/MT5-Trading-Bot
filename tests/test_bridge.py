@@ -2,6 +2,7 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -143,8 +144,9 @@ def test_replay_feed_hides_the_future(bars_m5):
     assert m5.index[-1] + (m5.index[1] - m5.index[0]) <= now          # only completed bars
     h1 = feed.rates("EURUSD", "H1", 10)
     last_h1 = h1.index[-1]
-    full_chunk = bars_m5[(bars_m5.index >= last_h1) & (bars_m5.index < now)]
-    assert h1["high"].iloc[-1] == full_chunk["high"].max()            # nothing beyond `now`
+    assert last_h1 + pd.Timedelta(hours=1) <= pd.Timestamp(now)      # forming H1 bar is not served
+    hour = bars_m5[(bars_m5.index >= last_h1) & (bars_m5.index < last_h1 + pd.Timedelta(hours=1))]
+    assert h1["high"].iloc[-1] == hour["high"].max() and h1["close"].iloc[-1] == hour["close"].iloc[-1]
     t = feed.tick("EURUSD")
     assert t.bid == bars_m5["open"].iloc[20_000]                      # forming bar exposes only its open
     feed.advance(1)

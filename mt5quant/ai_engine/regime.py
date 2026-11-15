@@ -30,6 +30,10 @@ class RegimeParams:
     er_trend: float = 0.22
     vol_high: float = 0.93
     vol_low: float = 0.22
+    # A percentile rank alone is not "abnormal" (7% of all bars are in the top
+    # 7% by definition), so the level must also be far from its median.
+    vol_ratio_high: float = 1.6
+    vol_ratio_low: float = 0.85
     shock_z: float = 6.0
     lookback: int = 250
 
@@ -50,14 +54,15 @@ def classify(df: pd.DataFrame, params: RegimeParams = RegimeParams()) -> pd.Data
     e20, e50 = ta.ema(close, 20), ta.ema(close, 50)
     slope = ta.slope(e50, 10) / a.replace(0.0, np.nan)
     vol_rank = ta.rolling_percentile(a / close, params.lookback)
+    vol_ratio = a / a.rolling(params.lookback, min_periods=params.lookback // 2).median().shift(1)
     shock = robust_z(ta.true_range(df), 100)
 
     trending = (adx_ >= params.adx_trend) & (er >= params.er_trend)
     up = trending & (e20 > e50) & (slope > 0)
     down = trending & (e20 < e50) & (slope < 0)
-    volatile = ((vol_rank >= params.vol_high) & (er < params.er_trend)) | \
+    volatile = ((vol_rank >= params.vol_high) & (vol_ratio >= params.vol_ratio_high) & (er < params.er_trend)) | \
                (shock.rolling(3, min_periods=1).max() >= params.shock_z)
-    quiet = (vol_rank <= params.vol_low) & (adx_ < params.adx_trend)
+    quiet = (vol_rank <= params.vol_low) & (vol_ratio <= params.vol_ratio_low) & (adx_ < params.adx_trend)
     known = adx_.notna() & vol_rank.notna() & e50.notna() & er.notna()
 
     regime = np.full(len(df), Regime.RANGE.value, dtype=object)
@@ -69,4 +74,4 @@ def classify(df: pd.DataFrame, params: RegimeParams = RegimeParams()) -> pd.Data
 
     direction = np.where(regime == Regime.TREND_UP.value, 1, np.where(regime == Regime.TREND_DOWN.value, -1, 0))
     return pd.DataFrame({"regime": regime, "direction": direction, "adx": adx_, "efficiency": er,
-                         "vol_rank": vol_rank, "slope": slope, "shock_z": shock}, index=df.index)
+                         "vol_rank": vol_rank, "vol_ratio": vol_ratio, "slope": slope, "shock_z": shock}, index=df.index)
