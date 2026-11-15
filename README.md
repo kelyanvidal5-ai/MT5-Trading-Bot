@@ -19,7 +19,7 @@ synthetic feed, as the banner on the page states.*
 
 ## Current state in one paragraph
 
-The whole platform is implemented and covered by 301 automated tests, and the
+The whole platform is implemented and covered by 302 automated tests, and the
 engine, dashboard and emergency stop were exercised end-to-end in paper mode.
 The MetaTrader 5 adapter is tested against a stand-in for the MT5 API only -
 it has **not yet been run against a real terminal** - and every backtest so
@@ -79,12 +79,19 @@ python main.py backtest --data EURUSD=data/EURUSD_M5.csv
 python main.py validate --data EURUSD=data/EURUSD_M5.csv GBPUSD=data/GBPUSD_M5.csv --verbose
 python main.py backtest --synthetic 100000 --symbols EURUSD
 
+# With a terminal open (Windows): read exact symbol names, account currency and real spreads
+python main.py symbols "*EUR*"
+python main.py broker-info --symbols EURUSD GBPUSD
+python main.py download-history --symbols EURUSD GBPUSD --timeframe M5 --days 1095
+
 python main.py status                                   # health + risk state
 python main.py stop "reason"                            # EMERGENCY STOP
 python main.py resume --confirm                         # manual resume
 ```
 
 To connect a MetaTrader 5 **demo** account see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+On Windows, `setup_windows.bat`, `start_windows.bat` and `stop_windows.bat` wrap the
+install, run and emergency-stop commands.
 
 ## Platform note (MetaTrader 5 and macOS/Linux)
 
@@ -128,6 +135,8 @@ and the engine does not start. Ceilings live in
 `mt5quant/risk_management/limits.py` and can only change through a code edit.
 
 ## Documentation
+
+- **[docs/DEMARRAGE_RAPIDE.md](docs/DEMARRAGE_RAPIDE.md) - guide pas à pas en français (Windows, compte démo, Discord, partage)**
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - layout, data flow, technical choices, limitations
 - [docs/STRATEGIES.md](docs/STRATEGIES.md) - hypotheses, selection, validation gates

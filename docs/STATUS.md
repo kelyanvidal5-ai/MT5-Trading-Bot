@@ -48,7 +48,10 @@ and fixed).
   feeds: parsers are tested on recorded samples only.
 - Real delivery through Telegram, webhooks or SMTP: payloads are tested with
   injected transports.
-- The Windows scheduled-task installer and the systemd unit: written, not run.
+- The Windows scheduled-task installer, the `*_windows.bat` helpers and the
+  systemd unit: written, not run.
+- `symbols`, `broker-info` and `download-history` against a real terminal:
+  their logic is tested against the stand-in only.
 - Any real market data. Every backtest and validation run performed so far
   used the synthetic generator.
 

@@ -211,3 +211,30 @@ def test_connection_state():
     assert broker.is_connected() is False
     with pytest.raises(B.BrokerError):
         MT5Broker(TradingMode.DEMO, None, 1, mt5_module=FakeMT5()).account_info()
+
+
+def test_symbols_and_broker_info_are_read_from_the_terminal():
+    from mt5quant.execution.broker_info import describe, find_symbols, suggested_config
+    fake = FakeMT5()
+    fake.prices["GBPUSD"] = (1.27000, 1.27012)
+    fake.prices["EURUSD.c"] = (1.10000, 1.10009)
+    broker, _ = make(fake, mode=TradingMode.PAPER)                 # read-only connection
+    broker.connect()
+    assert [r["name"] for r in find_symbols(broker, "*EUR*")] == ["EURUSD", "EURUSD.c"]
+    assert len(find_symbols(broker)) == 3 and find_symbols(broker, "*XAU*") == []
+
+    info = describe(broker, ["EURUSD", "GBPUSD", "USDJPY"])
+    assert info["account"]["currency"] == "USD" and info["account"]["type"] == "demo"
+    assert info["account"]["login"] == "12****78"                   # never the full account number
+    assert [m["symbol"] for m in info["missing"]] == ["USDJPY"]
+    eur = info["symbols"]["EURUSD"]
+    assert eur["digits"] == 5 and eur["stops_level_points"] == 10 and eur["spread_now_points"] == 10.0
+    assert eur["spread_median_points"] == 10.0 and eur["bars_available"] == 2000
+    assert info["symbols"]["GBPUSD"]["spread_now_points"] == 12.0
+    text = suggested_config(info, mode="demo")
+    import yaml
+    cfg = yaml.safe_load(text)
+    assert cfg["symbols"] == ["EURUSD", "GBPUSD"] and cfg["costs"]["spread_points"]["EURUSD"] == 10
+    assert cfg["paper"] == {"currency": "USD", "leverage": 30} and cfg["mode"] == "demo"
+    load_config(use_local=False, overrides=cfg)                     # the fragment is a valid configuration
+    assert fake.sent == []                                          # nothing was ever sent to the broker

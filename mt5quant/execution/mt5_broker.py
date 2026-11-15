@@ -197,6 +197,19 @@ class MT5Broker(Broker):
         self._specs[symbol] = spec
         return spec
 
+    def list_symbols(self, pattern: str = "*") -> list[dict]:
+        """Symbols the broker offers (name, group path, description). Use it
+        to find the exact spelling, including any suffix."""
+        self._require()
+        raw = self.mt5.symbols_get(group=pattern) if pattern and pattern != "*" else self.mt5.symbols_get()
+        if raw is None:
+            raise self._err("symbols_get")
+        return [{"name": str(i.name), "path": str(getattr(i, "path", "")),
+                 "description": str(getattr(i, "description", "")),
+                 "visible": bool(getattr(i, "visible", False)),
+                 "tradable": int(getattr(i, "trade_mode", 0)) == int(self.mt5.SYMBOL_TRADE_MODE_FULL)}
+                for i in raw]
+
     def tick(self, symbol: str) -> Tick:
         self._require()
         if symbol not in self._specs:

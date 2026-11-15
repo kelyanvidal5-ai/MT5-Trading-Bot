@@ -256,7 +256,11 @@ def test_telegram_and_webhook_payloads():
     TelegramChannel("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ", "42", post=post).send("info", "T", "B")
     WebhookChannel("https://hooks.example/x", post=post).send("critical", "T", "B")
     assert calls[0][0].endswith("/sendMessage") and calls[0][1]["chat_id"] == "42"
-    assert "[CRITICAL] T" in calls[1][1]["text"]
+    assert "[CRITICAL] T" in calls[1][1]["text"] and "content" not in calls[1][1]
+    WebhookChannel("https://discord.com/api/webhooks/123/abc", post=post).send("warning", "T", "x" * 5000)
+    discord = calls[2][1]
+    assert set(discord) == {"content", "username"} and discord["content"].startswith("[WARNING] T")
+    assert len(discord["content"]) <= 2000                         # Discord's message limit
 
 
 def test_notifier_from_env_has_no_channels_by_default(db):

@@ -55,7 +55,11 @@ class WebhookChannel(Channel):
 
         post = self._post or requests.post
         text = f"{_ICON[level]} {title}\n{body}"[:1900]
-        r = post(self._url, json={"text": text, "content": text}, timeout=10)
+        if "discord.com/api/webhooks" in self._url or "discordapp.com/api/webhooks" in self._url:
+            payload = {"content": text, "username": "MT5 Quant"}       # Discord's own format
+        else:
+            payload = {"text": text}                                   # Slack-compatible
+        r = post(self._url, json=payload, timeout=10)
         if getattr(r, "status_code", 200) >= 300:
             raise RuntimeError(f"webhook HTTP {r.status_code}")
 

@@ -11,6 +11,8 @@
     python main.py stop "reason"         EMERGENCY STOP (blocks entries, flattens positions)
     python main.py resume --confirm      resume after a stop / suspension
     python main.py bridge                MT5 gateway (run on the Windows machine with the terminal)
+    python main.py symbols "*EUR*"       list the broker's exact symbol names
+    python main.py broker-info           account currency, contract specs, measured spreads
     python main.py download-history ...  save broker history to CSV for backtesting
     python main.py authorize-live        interactive authorization of real-money trading
 
@@ -305,6 +307,50 @@ def cmd_download(args, cfg) -> int:
     return 0
 
 
+def _read_only_broker(args, cfg):
+    """A connection that can read from the terminal but never send an order."""
+    from mt5quant.core.factory import _bridge_broker, _mt5_broker
+
+    paper_cfg = cfg.model_copy(update={"mode": TradingMode.PAPER})
+    broker = _mt5_broker(paper_cfg, None, read_only=True) if args.source == "mt5" else _bridge_broker(cfg)
+    if not broker.connect():
+        raise SystemExit("could not connect to the MetaTrader 5 terminal (is it open and logged in?)")
+    return broker
+
+
+def cmd_symbols(args, cfg) -> int:
+    from mt5quant.execution.broker_info import find_symbols
+
+    rows = find_symbols(_read_only_broker(args, cfg), args.pattern)
+    for r in rows:
+        flag = "" if r["tradable"] else "  (not tradable)"
+        print(f"{r['name']:<16} {r['path']:<34} {r['description']}{flag}")
+    print(f"\n{len(rows)} symbol(s) match '{args.pattern}'. Copy the exact names into config/local.yaml.")
+    return 0
+
+
+def cmd_broker_info(args, cfg) -> int:
+    from mt5quant.execution.broker_info import describe, suggested_config
+
+    info = describe(_read_only_broker(args, cfg), args.symbols or cfg.symbols)
+    a = info["account"]
+    print(f"account : {a['login']} on {a['server']} - {a['type']} - {a['currency']} - leverage 1:{a['leverage']} "
+          f"- balance {a['balance']:.2f}")
+    for name, r in info["symbols"].items():
+        print(f"{name:<12} digits {r['digits']}  contract {r['contract_size']:g}  min lot {r['volume_min']:g}  "
+              f"stop level {r['stops_level_points']} pts  spread now/median/p90 "
+              f"{r['spread_now_points']}/{r['spread_median_points']}/{r['spread_p90_points']} pts  "
+              f"({r['bars_available']} M5 bars available)")
+    for m in info["missing"]:
+        print(f"{m['symbol']:<12} NOT FOUND - run: python main.py symbols \"*{m['symbol'][:6]}*\"")
+    if info["symbols"]:
+        print("\n--- suggested config/local.yaml ---")
+        print(suggested_config(info))
+    if a["type"] != "demo":
+        print("WARNING: this is a REAL account. The platform stays in paper mode unless you change it.")
+    return 0 if not info["missing"] else 1
+
+
 def cmd_authorize_live(args, cfg) -> int:
     from mt5quant.execution.live_gate import LiveGate, write_authorization
 
@@ -380,16 +426,32 @@ def main(argv=None) -> int:
     dl.add_argument("--days", type=int, default=730)
     dl.add_argument("--out")
     sub.add_parser("authorize-live")
+    sy = sub.add_parser("symbols", help="list the broker's symbols (find exact names)")
+    sy.add_argument("pattern", nargs="?", default="*")
+    sy.add_argument("--source", choices=["mt5", "bridge"], default="mt5")
+    bi = sub.add_parser("broker-info", help="account currency, contract specs and measured spreads")
+    bi.add_argument("--symbols", nargs="*")
+    bi.add_argument("--source", choices=["mt5", "bridge"], default="mt5")
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
-    quiet = args.cmd in ("check", "status", "stop", "resume", "authorize-live", "backtest", "validate", "research")
+    quiet = args.cmd in ("check", "status", "stop", "resume", "authorize-live", "backtest", "validate", "research",
+                         "symbols", "broker-info")
     setup_logging(cfg.resolve_path(cfg.log_dir), "WARNING" if quiet else cfg.log_level)
     handlers = {"check": cmd_check, "run": cmd_run, "dashboard": cmd_dashboard, "backtest": cmd_backtest,
                 "validate": cmd_validate, "research": cmd_research, "status": cmd_status, "stop": cmd_stop,
                 "resume": cmd_resume, "bridge": cmd_bridge, "download-history": cmd_download,
-                "authorize-live": cmd_authorize_live}
-    return handlers[args.cmd](args, cfg)
+                "authorize-live": cmd_authorize_live, "symbols": cmd_symbols, "broker-info": cmd_broker_info}
+    from mt5quant.core.engine import EngineError
+    from mt5quant.execution.broker import BrokerError
+    from mt5quant.execution.live_gate import LiveTradingLocked
+
+    try:
+        return handlers[args.cmd](args, cfg)
+    except (BrokerError, EngineError, LiveTradingLocked) as exc:
+        # Expected operational failures: say what is wrong, no stack trace.
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

@@ -175,5 +175,12 @@ class FakeMT5:
             return NS(retcode=10009, order=req["order"], deal=0, volume=0.0, price=0.0, comment="removed")
         return NS(retcode=10013, order=0, deal=0, volume=0.0, price=0.0, comment="invalid")
 
+    def symbols_get(self, group=None):
+        import fnmatch
+
+        names = [n for n in self.prices if group is None or fnmatch.fnmatch(n, group)]
+        return tuple(NS(name=n, path=f"Forex\\{n}", description=f"{n[:3]} vs {n[3:6]}", visible=True,
+                        trade_mode=self.SYMBOL_TRADE_MODE_FULL) for n in names)
+
     def history_deals_get(self, start, end):
         return tuple(self.deals)

@@ -23,7 +23,7 @@ from .codec import decode, encode, verify
 
 log = logging.getLogger(__name__)
 
-READ_METHODS = {"is_connected", "account_info", "symbol_spec", "tick", "rates", "positions",
+READ_METHODS = {"is_connected", "account_info", "symbol_spec", "tick", "rates", "positions", "list_symbols",
                 "pending_orders", "closed_trades", "now"}
 WRITE_METHODS = {"send_order", "modify_position", "close_position", "cancel_order"}
 

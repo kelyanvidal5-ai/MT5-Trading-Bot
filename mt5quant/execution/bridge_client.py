@@ -91,6 +91,9 @@ class BridgeBroker(Broker):
     def pending_orders(self, symbol: Optional[str] = None) -> list[PendingOrder]:
         return self._call("pending_orders", symbol=symbol)
 
+    def list_symbols(self, pattern: str = "*") -> list[dict]:
+        return self._call("list_symbols", pattern=pattern)
+
     def closed_trades(self, since: datetime) -> list[ClosedTrade]:
         return self._call("closed_trades", since=since.isoformat())
 
