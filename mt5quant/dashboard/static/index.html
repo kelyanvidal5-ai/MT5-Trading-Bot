@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MT5 Quant AI</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <h1>MT5 Quant AI</h1>
+    <span id="mode" class="badge">—</span>
+  </div>
+  <div class="status" id="status-strip">
+    <span class="pill" id="conn"><span class="dot"></span><span class="txt">Connecting…</span></span>
+    <span class="pill" id="monitor"><span class="txt">—</span></span>
+    <span class="pill quiet" id="sessions"></span>
+    <span class="pill quiet" id="clock"></span>
+  </div>
+  <div class="actions">
+    <button id="resume" class="btn ghost" hidden>Resume trading</button>
+    <button id="stop" class="btn danger" title="Block new entries and close all positions">■ EMERGENCY STOP</button>
+  </div>
+</header>
+
+<div id="banners" class="banners" role="status" aria-live="polite"></div>
+
+<main>
+  <section class="grid top">
+    <article class="card hero">
+      <div class="label">Current equity</div>
+      <div class="hero-value" id="equity">—</div>
+      <div class="hero-sub">
+        <div><span class="label">Balance</span><b id="balance">—</b></div>
+        <div><span class="label">Available margin</span><b id="margin-free">—</b></div>
+        <div><span class="label">Floating P/L</span><b id="floating">—</b></div>
+      </div>
+    </article>
+    <article class="card tile"><div class="label">Today</div><div class="value" id="pnl-today">—</div><div class="sub" id="trades-today"></div></article>
+    <article class="card tile"><div class="label">This week</div><div class="value" id="pnl-week">—</div><div class="sub">realised P/L</div></article>
+    <article class="card tile"><div class="label">This month</div><div class="value" id="pnl-month">—</div><div class="sub">realised P/L</div></article>
+  </section>
+
+  <div class="filters" role="group" aria-label="Time range">
+    <span class="label">Range</span>
+    <button class="chip" data-range="1d">1D</button>
+    <button class="chip on" data-range="7d">7D</button>
+    <button class="chip" data-range="30d">30D</button>
+    <button class="chip" data-range="90d">90D</button>
+    <button class="chip" data-range="all">All</button>
+  </div>
+
+  <section class="grid two">
+    <article class="card">
+      <div class="card-head">
+        <h2>Equity and balance</h2>
+        <div class="legend"><span class="key k1"></span>Equity<span class="key k2"></span>Balance</div>
+      </div>
+      <div class="chart" id="equity-chart" role="img" aria-label="Equity and balance over time"></div>
+    </article>
+    <article class="card">
+      <div class="card-head"><h2>Risk exposure</h2><span class="hint" id="risk-state"></span></div>
+      <div id="meters" class="meters"></div>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <div class="card-head">
+        <h2>Daily realised P/L</h2>
+        <div class="legend"><span class="sw pos"></span>Gain<span class="sw neg"></span>Loss</div>
+      </div>
+      <div class="chart short" id="daily-chart" role="img" aria-label="Realised profit and loss per day"></div>
+      <details class="tableview"><summary>View as table</summary><div id="daily-table"></div></details>
+    </article>
+    <article class="card">
+      <div class="card-head"><h2>Performance</h2><span class="hint">closed trades, this mode</span></div>
+      <div class="stats" id="stats"></div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Active positions</h2><span class="hint" id="pos-count"></span></div>
+    <div class="table-wrap"><table id="positions"></table></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Strategy performance</h2><span class="hint">net realised P/L per strategy</span></div>
+    <div class="strategy-layout">
+      <div class="chart bars" id="strategy-chart" role="img" aria-label="Net profit per strategy"></div>
+      <div class="table-wrap"><table id="strategies"></table></div>
+    </div>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <div class="card-head"><h2>Market monitoring</h2><span class="hint" id="can-open"></span></div>
+      <div class="table-wrap"><table id="markets"></table></div>
+    </article>
+    <article class="card">
+      <div class="card-head"><h2>Economic calendar</h2><span class="hint">next 48 hours, as published by the source</span></div>
+      <div class="table-wrap"><table id="news"></table></div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Trading history</h2><span class="hint">most recent 50</span></div>
+    <div class="table-wrap tall"><table id="trades"></table></div>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <div class="card-head"><h2>Decision log</h2><span class="hint">why each signal was traded or declined</span></div>
+      <div id="decisions" class="log"></div>
+    </article>
+    <article class="card">
+      <div class="card-head"><h2>Notifications</h2></div>
+      <div id="notifications" class="log"></div>
+    </article>
+  </section>
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+
+<dialog id="stop-dialog">
+  <form method="dialog" id="stop-form">
+    <h2>Emergency stop</h2>
+    <p>This blocks all new entries, cancels pending orders and closes every open position on the engine's next
+       cycle. Trading stays stopped until it is manually resumed.</p>
+    <label>Reason (recorded in the audit log)
+      <input id="stop-reason" maxlength="200" placeholder="e.g. unexpected market conditions">
+    </label>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button value="confirm" class="btn danger">Stop trading now</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="token-dialog">
+  <form method="dialog" id="token-form">
+    <h2>Dashboard token</h2>
+    <p>Enter the value of <code>DASHBOARD_TOKEN</code>. It is kept for this browser tab only.</p>
+    <label>Token <input id="token-input" type="password" autocomplete="off"></label>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button value="confirm" class="btn primary">Continue</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

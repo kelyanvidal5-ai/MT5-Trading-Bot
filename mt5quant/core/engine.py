@@ -547,6 +547,17 @@ class TradingEngine:
                                     open_risk=open_risk)
             self._last_snapshot = now
         can_open, blocks = self.risk.can_open(now)
+        rows = []
+        for p in positions:
+            info = self.orders.management_for(p) if p.magic == self.cfg.execution.magic else None
+            spec = self.specs.get(p.symbol)
+            rows.append({"ticket": p.ticket, "symbol": p.symbol, "side": p.side.value, "volume": p.volume,
+                         "price_open": p.price_open, "price_current": p.price_current, "sl": p.sl, "tp": p.tp,
+                         "profit": p.profit, "swap": p.swap, "time_open": p.time_open.isoformat(),
+                         "strategy": info["strategy"] if info else "(external)",
+                         "risk": remaining_risk(p, spec) if spec is not None and p.sl > 0 else None,
+                         "digits": spec.digits if spec is not None else 5})
+        self.db.set_state("positions", rows)
         self.db.heartbeat("engine", "running", {
             "mode": self.mode.value, "engine_time": now.isoformat(), "cycle_ms": round(cycle_seconds * 1000, 1),
             "positions": len(positions), "open_risk": round(open_risk, 2), "can_open": can_open,

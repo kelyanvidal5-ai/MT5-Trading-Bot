@@ -1,0 +1,2 @@
+# Independent liveness check, every minute. Install with: crontab deploy/mt5quant-watchdog.cron
+* * * * * cd /opt/mt5quant && .venv/bin/python scripts/watchdog.py --max-age 180 >> logs/watchdog.log 2>&1

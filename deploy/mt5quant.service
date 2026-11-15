@@ -1,0 +1,28 @@
+# systemd unit for the trading engine on Linux (engine + dashboard).
+# The MetaTrader 5 terminal itself must run on Windows; in demo/live this
+# service talks to it through the gateway (broker_backend: bridge).
+#
+#   sudo cp deploy/mt5quant.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now mt5quant
+#
+# Adjust User and the two paths below.
+[Unit]
+Description=MT5 Quant AI trading engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trader
+WorkingDirectory=/opt/mt5quant
+EnvironmentFile=/opt/mt5quant/.env
+ExecStart=/opt/mt5quant/.venv/bin/python main.py run
+Restart=always
+RestartSec=15
+# A restart is safe: orders are idempotent and state is reloaded from the database.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
