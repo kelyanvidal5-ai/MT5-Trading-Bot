@@ -12,6 +12,21 @@ multi-key gate and a demo track record (see [docs/LIVE_TRADING.md](docs/LIVE_TRA
 > to be demonstrated on your broker's data by the validation pipeline, then on a
 > demo account. Trading leveraged products can lose money quickly.
 
+![Dashboard in paper mode on the synthetic demo feed](docs/images/dashboard.png)
+
+*Dashboard in paper mode. The data in this screenshot comes from the built-in
+synthetic feed, as the banner on the page states.*
+
+## Current state in one paragraph
+
+The whole platform is implemented and covered by 301 automated tests, and the
+engine, dashboard and emergency stop were exercised end-to-end in paper mode.
+The MetaTrader 5 adapter is tested against a stand-in for the MT5 API only -
+it has **not yet been run against a real terminal** - and every backtest so
+far used synthetic prices, so **no strategy is validated**. See
+[docs/STATUS.md](docs/STATUS.md) for the exact boundary between tested and
+untested.
+
 ## What it does
 
 - **Autonomous engine** - monitors the configured symbols during their trading

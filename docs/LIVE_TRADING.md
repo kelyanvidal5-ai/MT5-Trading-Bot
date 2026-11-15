@@ -28,6 +28,14 @@ The gate is evaluated when the engine starts, when the broker connects, and
 again inside the MT5 adapter for **every order**. If the account type changes
 (for example someone switches account in the terminal), orders are refused.
 
+With the bridge topology the gate is enforced on both sides: the engine checks
+all four conditions, and the gateway independently checks conditions 1-3 on
+the Windows machine before it forwards any order.
+
+A `validated` verdict belongs to one exact parameter set. The engine loads the
+validated parameters automatically; if you override any of them in
+`strategies.params`, the strategy stops counting as validated.
+
 Nothing in the dashboard, the AI engine or the strategies can alter the gate.
 
 ## Recommended sequence

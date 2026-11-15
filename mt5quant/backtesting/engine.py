@@ -26,7 +26,7 @@ import pandas as pd
 
 from ..ai_engine import context
 from ..ai_engine.meta_model import FEATURES, build_features
-from ..core.models import (UTC, AccountInfo, ClosedTrade, ManagementPlan, OrderRequest, Side, Signal, Tick,
+from ..core.models import (UTC, ClosedTrade, ManagementPlan, OrderRequest, Side, Signal, Tick,
                            Timeframe)
 from ..execution.paper import PaperBroker
 from ..execution.position_manager import plan
@@ -406,6 +406,3 @@ class Backtester:
 def _opt(x):
     return None if x is None or (isinstance(x, float) and x != x) else x
 
-
-def account_stub(equity: float) -> AccountInfo:   # pragma: no cover - helper for notebooks
-    return AccountInfo("BT", "backtest", "USD", equity, equity, 0.0, equity, 0.0, 30, True, True)

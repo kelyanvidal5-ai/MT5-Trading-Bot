@@ -323,3 +323,121 @@ def test_engine_survives_cycle_errors_and_trips_emergency_stop(bars_m5, db):
     assert engine.risk.kill_switch()["active"] is True
     assert any("Engine unstable" in title for _, title, _ in cap.sent)
     assert db.heartbeats()["engine"]["status"] == "stopped"
+
+
+def test_engine_trades_only_the_validated_parameter_set(bars_m5, db):
+    from mt5quant.core.config import load_config as lc
+    report = {"params": {"rr": 2.5, "min_pierce_atr": 0.2}}
+    db.set_strategy_status("liquidity_sweep", "EURUSD", "validated", report)
+    cfg = lc(use_local=False, overrides={"symbols": ["EURUSD"], "news": {"enabled": False},
+                                         "strategies": {"enabled": ["liquidity_sweep"],
+                                                        "allow_unvalidated_in_paper": False}})
+    feed = ReplayFeed({"EURUSD": bars_m5}, base_tf="M5", start=bars_m5.index[START])
+    engine = TradingEngine(cfg, PaperBroker(data=feed), db, sleep=lambda s: None)
+    strat = engine.strategies[0]
+    assert strat.p("rr") == 2.5 and strat.p("min_pierce_atr") == 0.2          # loaded from the validation report
+    assert engine._strategy_allowed(strat, "EURUSD") == (True, "")
+    # An explicit override no longer matches what was validated.
+    cfg2 = lc(use_local=False, overrides={"symbols": ["EURUSD"], "news": {"enabled": False},
+                                          "strategies": {"enabled": ["liquidity_sweep"],
+                                                         "allow_unvalidated_in_paper": False,
+                                                         "params": {"liquidity_sweep": {"rr": 4.0}}}})
+    engine2 = TradingEngine(cfg2, PaperBroker(data=feed), db, sleep=lambda s: None)
+    ok, why = engine2._strategy_allowed(engine2.strategies[0], "EURUSD")
+    assert not ok and "different parameters (rr)" in why
+    assert engine._strategy_allowed(strat, "GBPUSD")[0] is False               # validated for EURUSD only
+
+
+def test_paper_trade_closed_just_before_a_crash_is_not_lost(bars_m5, tmp_path):
+    from mt5quant.core.models import OrderRequest, Side
+    path = tmp_path / "crash.db"
+    db = Database(path)
+    engine, feed, broker, _ = build(bars_m5, db)
+    engine.start()
+    tick = broker.tick("EURUSD")
+    sig_id = "qcrashtest0000001"
+    db.reserve_order(client_id=sig_id, mode="paper", symbol="EURUSD", side="buy", order_type="market",
+                     volume=0.05, price=None, sl=tick.bid - 0.0050, tp=tick.bid + 0.0100, strategy="liquidity_sweep",
+                     risk_amount=25.0, management={}, signal_time=broker.now(), timeframe="M15")
+    res = broker.send_order(OrderRequest(sig_id, "EURUSD", Side.BUY, 0.05, sl=round(tick.bid - 0.0050, 5),
+                                         tp=round(tick.bid + 0.0100, 5), magic=550100, comment=sig_id))
+    db.update_order(sig_id, status="filled", position_ticket=res.position_ticket, fill_price=res.fill_price)
+    broker.close_position(res.position_ticket, reason="manual")              # closed ... and then the process dies
+    assert db.trades() == []
+    resume_at = feed._now
+    db.close()
+    db2 = Database(path)
+    engine2, feed2, broker2, _ = build(bars_m5, db2)
+    feed2.set_time(resume_at)
+    engine2.start()                                                           # recovery records the trade
+    trades = db2.trades()
+    assert len(trades) == 1 and trades[0]["client_id"] == sig_id and trades[0]["strategy"] == "liquidity_sweep"
+    engine2.run_once()
+    assert len(db2.trades()) == 1
+
+
+def test_abnormal_slippage_raises_an_alert(bars_m5, db):
+    engine, feed, broker, cap = build(bars_m5, db, overrides={"risk": {"max_slippage_points": 1}})
+    broker.cost.slippage_points_mean = 0.0
+    engine.start()
+    real_send = broker.send_order
+
+    def slipped(request):
+        res = real_send(request)
+        if res.ok:
+            res.fill_price += 0.00050 * request.side.sign                   # 50 points worse than expected
+        return res
+
+    broker.send_order = slipped
+    for _ in range(1500):
+        feed.advance(1)
+        if engine.run_once()["executed"]:
+            break
+    assert any("Abnormal slippage" in title for _, title, _ in cap.sent)
+    assert len(engine.risk.state.order_errors) >= 1
+
+
+def test_synthetic_live_feed_runs_through_the_engine(db):
+    """Regression: the wall-clock-driven synthetic feed has a sub-second
+    virtual clock; it must not break timestamp lookups (found by running
+    `python main.py run`)."""
+    import time as _t
+
+    from mt5quant.market_data.feeds import SyntheticFeed
+
+    cfg = load_config(use_local=False, overrides={"symbols": ["EURUSD"], "news": {"enabled": False},
+                                                  "strategies": {"enabled": ["scalp_pullback", "liquidity_sweep"]}})
+    feed = SyntheticFeed(["EURUSD"], seed=3, speed=600.0, history_bars=9_000, future_bars=3_000)
+    broker = PaperBroker(data=feed, balance=10_000)
+    engine = TradingEngine(cfg, broker, db, sleep=lambda s: None)
+    engine.start()
+    for _ in range(4):
+        assert engine.run_once()["connected"] is True
+        _t.sleep(0.6)                                   # 0.6 s wall = 6 virtual minutes: a new M5 bar each cycle
+    assert feed.now().microsecond == 0
+    assert db.heartbeats()["engine"]["details"]["synthetic_data"] is True
+    feed.set_time(pd.Timestamp("2024-03-13 12:00:00.123456", tz="UTC"))     # arbitrary precision is accepted
+    assert feed._now == pd.Timestamp("2024-03-13 12:00:00", tz="UTC")
+
+
+def test_engine_accepts_second_resolution_broker_frames(bars_m5, db):
+    """MetaTrader delivers epoch-second timestamps; mixed resolutions across
+    timeframes must still align and produce the same signals."""
+    engine, feed, broker, _ = build(bars_m5, db, strategies=("liquidity_sweep",))
+    engine.start()
+    feed.advance(3)
+    now = broker.now()
+    ref = engine._load("EURUSD", {"M15", "H1", "H4", "D1"}, now)
+    real_rates = broker.rates
+
+    def seconds(symbol, tf, count):
+        f = real_rates(symbol, tf, count).copy()
+        f.index = f.index.as_unit("s")
+        return f
+
+    broker.rates = seconds
+    got = engine._load("EURUSD", {"M15", "H1", "H4", "D1"}, now)
+    strat = engine.strategies[0]
+    a, b = strat.generate(ref), strat.generate(got)
+    assert (a["side"].values == b["side"].values).all() and len(a) == len(b)
+    assert all(f.index.unit == "ns" for f in got.frames.values())

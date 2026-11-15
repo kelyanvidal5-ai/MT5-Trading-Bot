@@ -70,8 +70,14 @@ class TradingEngine:
         self.notifier = notifier or Notifier(db=db)
         self.news = news
         self.live_gate = live_gate or LiveGate(config, db)
-        self.strategies = strategies if strategies is not None else create_all(
-            config.strategies.enabled, config.strategies.params)
+        if strategies is None:
+            # Parameters chosen by validation are the defaults; explicit config
+            # overrides win, but then the strategy no longer counts as validated.
+            params = {}
+            for name in config.strategies.enabled:
+                params[name] = {**self._validated_params(db, name), **config.strategies.params.get(name, {})}
+            strategies = create_all(config.strategies.enabled, params)
+        self.strategies = strategies
         ses = config.sessions
         self.calendar = MarketCalendar(ses.avoid_rollover_minutes, ses.friday_cutoff_hours_before_close,
                                        ses.monday_open_delay_minutes, ses.holidays)
@@ -353,12 +359,28 @@ class TradingEngine:
                 self.orders.modify_stop(p, round(act.new_sl, spec.digits), act.reason)
 
     # ================================================================ signals
+    @staticmethod
+    def _validated_params(db, name: str, symbol: Optional[str] = None) -> dict:
+        """Parameters recorded by the validation run that produced a
+        VALIDATED status (empty when there is none)."""
+        import json
+
+        for st in db.strategy_statuses():
+            if st["strategy"] == name and st["status"] == "validated" and (symbol is None or st["symbol"] == symbol):
+                return dict(json.loads(st["report"] or "{}").get("params") or {})
+        return {}
+
     def _strategy_allowed(self, s: Strategy, symbol: str) -> tuple[bool, str]:
         status = self.db.strategy_status(s.name, symbol)
         if status == "suspended":
             return False, "strategy suspended (performance deterioration)"
         if status == "validated":
-            return True, ""
+            # The verdict belongs to one exact parameter set.
+            validated = self._validated_params(self.db, s.name, symbol)
+            changed = sorted(k for k, v in validated.items() if k in s.params and s.params[k] != v)
+            if not changed:
+                return True, ""
+            status = f"validated with different parameters ({', '.join(changed)})"
         if self.mode is TradingMode.PAPER and self.cfg.strategies.allow_unvalidated_in_paper:
             return True, ""
         return False, f"strategy is '{status}' for {symbol}: only VALIDATED strategies trade in {self.mode.value}"
@@ -381,7 +403,13 @@ class TradingEngine:
         for tf in sorted(tfs, key=lambda x: Timeframe(x).minutes):
             if Timeframe(tf).minutes < floor:
                 continue
-            frames[tf] = drop_incomplete(self.broker.rates(symbol, tf, self.cfg.engine.history_bars), tf, stamp)
+            frame = self.broker.rates(symbol, tf, self.cfg.engine.history_bars)
+            if getattr(frame.index, "unit", "ns") != "ns":
+                # Brokers deliver second-resolution timestamps; keep every
+                # timeframe on one resolution so alignment is exact.
+                frame = frame.copy()
+                frame.index = frame.index.as_unit("ns")
+            frames[tf] = drop_incomplete(frame, tf, stamp)
         return MarketData(symbol, self.specs[symbol], frames)
 
     def _evaluate_symbol(self, symbol: str, now: datetime) -> tuple[int, int]:
@@ -504,6 +532,13 @@ class TradingEngine:
                     status, result, cid = self.orders.submit(signal, decision)
                     if status in ("filled", "placed"):
                         executed += 1
+                        slip = abs((result.fill_price or decision.entry_price) - decision.entry_price) / spec.point
+                        if status == "filled" and slip > self.cfg.risk.max_slippage_points:
+                            self.notifier.notify(
+                                "warning", f"Abnormal slippage on {symbol}",
+                                f"Filled {slip:.0f} points from the expected price "
+                                f"(tolerance {self.cfg.risk.max_slippage_points}).", key=f"slip_{cid}")
+                            self._order_error(now, f"{symbol} slippage {slip:.0f} points")
                     elif status == "duplicate":
                         continue
                     else:

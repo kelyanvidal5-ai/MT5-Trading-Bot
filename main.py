@@ -25,11 +25,10 @@ import json
 import logging
 import platform
 import sys
-import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from mt5quant.core.config import LIVE_AUTH_PHRASE, ROOT, Secrets, load_config
+from mt5quant.core.config import LIVE_AUTH_PHRASE, Secrets, load_config
 from mt5quant.core.logging_setup import mask_login, setup_logging
 from mt5quant.core.models import UTC, TradingMode
 from mt5quant.database.db import Database

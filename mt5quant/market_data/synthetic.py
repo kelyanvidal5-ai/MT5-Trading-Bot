@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 
 from ..core.models import Timeframe
-from .sessions import MarketCalendar
 
 _START_PRICE = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 150.00, "AUDUSD": 0.6600, "USDCHF": 0.8800,
                 "USDCAD": 1.3600, "NZDUSD": 0.6100, "EURJPY": 162.00, "GBPJPY": 190.00, "EURGBP": 0.8550,
@@ -28,7 +27,6 @@ _ANNUAL_VOL = {"EURUSD": 0.075, "GBPUSD": 0.09, "USDJPY": 0.10, "XAUUSD": 0.16}
 
 def fx_bar_index(start: pd.Timestamp, periods: int, tf: str) -> pd.DatetimeIndex:
     """``periods`` bar-open timestamps starting at ``start``, FX week only."""
-    cal = MarketCalendar(0, 0, 0)
     step = pd.Timedelta(minutes=Timeframe(tf).minutes)
     out: list[pd.DatetimeIndex] = []
     count, cursor = 0, pd.Timestamp(start).tz_convert("UTC") if pd.Timestamp(start).tzinfo else \
@@ -42,7 +40,6 @@ def fx_bar_index(start: pd.Timestamp, periods: int, tf: str) -> pd.DatetimeIndex
         out.append(kept)
         count += len(kept)
         cursor = chunk[-1] + step
-    del cal
     idx = out[0]
     for more in out[1:]:
         idx = idx.append(more)
@@ -54,7 +51,7 @@ def generate_bars(symbol: str = "EURUSD", periods: int = 50_000, tf: str = "M5",
                   spread_points: float = 8.0, digits: Optional[int] = None,
                   drift_strength: float = 1.0) -> pd.DataFrame:
     """Generate OHLCV(+spread) bars. Deterministic for a given seed."""
-    rng = np.random.default_rng(seed + (abs(hash(symbol)) % 1000 if False else sum(map(ord, symbol))))
+    rng = np.random.default_rng(seed + sum(map(ord, symbol)))      # stable per-symbol stream
     index = fx_bar_index(pd.Timestamp(start), periods, tf)
     n, sub = len(index), 6
     minutes = Timeframe(tf).minutes
@@ -94,7 +91,7 @@ def generate_bars(symbol: str = "EURUSD", periods: int = 50_000, tf: str = "M5",
     # --- sub-bar path -> OHLC ----------------------------------------------
     z = rng.standard_t(df=5, size=(n, sub)) / np.sqrt(5 / 3)
     steps = z * (sigma[:, None] / np.sqrt(sub)) + drift[:, None] / sub
-    # range regime: mild mean reversion toward a slow anchor
+    # occasional jumps (news-like shocks)
     jumps = (rng.random(n) < (minutes / (1440.0 * 6.0))) * rng.normal(0, base_sigma * 9, n)
     steps[:, 0] += jumps
     # weekend gaps
@@ -105,7 +102,6 @@ def generate_bars(symbol: str = "EURUSD", periods: int = 50_000, tf: str = "M5",
     steps[:, 0] += gap
 
     logp = np.log(price0) + np.cumsum(steps.ravel()).reshape(n, sub)
-    # anchor mean reversion in range regimes keeps prices from drifting unrealistically
     close = np.exp(logp[:, -1])
     prev_close = np.concatenate(([price0], close[:-1]))
     open_ = prev_close * np.exp(gap)

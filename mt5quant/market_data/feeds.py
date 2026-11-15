@@ -20,6 +20,22 @@ from .synthetic import generate_bars
 from .timeframes import resample
 
 
+def _stamp(t) -> pd.Timestamp:
+    """UTC timestamp at whole-second precision in nanosecond resolution."""
+    ts = pd.Timestamp(t)
+    ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    return ts.floor("s").as_unit("ns")
+
+
+def _ns(df: pd.DataFrame) -> pd.DataFrame:
+    if getattr(df.index, "unit", "ns") == "ns":
+        return df
+    out = df.copy()
+    out.index = df.index.as_unit("ns")
+    out.attrs = dict(df.attrs)
+    return out
+
+
 class ReplayFeed(MarketDataSource):
     """Serves bars from in-memory history up to a controllable clock."""
 
@@ -30,6 +46,9 @@ class ReplayFeed(MarketDataSource):
                  specs: Optional[dict[str, SymbolSpec]] = None, start: Optional[datetime] = None) -> None:
         self.base_tf = base_tf
         self.min_timeframe = base_tf
+        # One timestamp resolution everywhere: mixed pandas units cannot be
+        # compared losslessly by searchsorted.
+        bars = {s: _ns(df) for s, df in bars.items()}
         self._bars = bars
         self._step = pd.Timedelta(minutes=Timeframe(base_tf).minutes)
         self._currency = account_currency
@@ -38,7 +57,7 @@ class ReplayFeed(MarketDataSource):
         self._specs = dict(specs or {})
         self._cache: dict[tuple, pd.DataFrame] = {}
         first_end = min(df.index[-1] for df in bars.values())
-        self._now = pd.Timestamp(start) if start is not None else first_end + self._step
+        self._now = _stamp(start) if start is not None else first_end + self._step
         self.connected = True
         self.synthetic = any(df.attrs.get("synthetic") for df in bars.values())
 
@@ -47,7 +66,7 @@ class ReplayFeed(MarketDataSource):
         return self._now.to_pydatetime()
 
     def set_time(self, t: datetime | pd.Timestamp) -> None:
-        self._now = pd.Timestamp(t)
+        self._now = _stamp(t)
 
     def advance(self, bars: int = 1) -> None:
         self._now = self._now + self._step * bars
@@ -132,7 +151,7 @@ class SyntheticFeed(ReplayFeed):
 
     def now(self) -> datetime:
         elapsed = (utcnow() - self._wall0).total_seconds() * self.speed
-        self._now = self._virtual0 + pd.Timedelta(seconds=elapsed)
+        self._now = _stamp(self._virtual0 + pd.Timedelta(seconds=int(elapsed)))
         return self._now.to_pydatetime()
 
     def _visible(self, symbol: str) -> pd.DataFrame:

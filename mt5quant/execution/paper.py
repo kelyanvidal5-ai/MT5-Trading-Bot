@@ -77,6 +77,21 @@ class _Pend:
     comment: str
 
 
+def _trade_to_dict(t: ClosedTrade) -> dict:
+    d = asdict(t)
+    d["side"] = t.side.value
+    d["time_open"], d["time_close"] = t.time_open.isoformat(), t.time_close.isoformat()
+    return d
+
+
+def _trade_from_dict(d: dict) -> ClosedTrade:
+    d = dict(d)
+    d["side"] = Side(d["side"])
+    d["time_open"] = datetime.fromisoformat(d["time_open"])
+    d["time_close"] = datetime.fromisoformat(d["time_close"])
+    return ClosedTrade(**d)
+
+
 def _roll_index(t: datetime) -> int:
     return int(math.floor((t.timestamp() - _ROLL_SECONDS) / 86400.0))
 
@@ -113,6 +128,9 @@ class PaperBroker(Broker):
             "balance": self._balance, "next_ticket": self._next_ticket,
             "positions": [asdict(p) for p in self._positions.values()],
             "pending": [asdict(p) for p in self._pending.values()],
+            # Recent closes are kept so a crash between "position closed" and
+            # "trade recorded" cannot lose a trade (recording is idempotent).
+            "closed": [_trade_to_dict(t) for t in self._closed[-50:]],
         }
 
     def load_state(self, state: Optional[dict]) -> None:
@@ -122,6 +140,7 @@ class PaperBroker(Broker):
         self._next_ticket = int(state["next_ticket"])
         self._positions = {p["ticket"]: _Pos(**p) for p in state.get("positions", [])}
         self._pending = {p["ticket"]: _Pend(**p) for p in state.get("pending", [])}
+        self._closed = [_trade_from_dict(d) for d in state.get("closed", [])]
 
     def _changed(self) -> None:
         if self._on_change:
