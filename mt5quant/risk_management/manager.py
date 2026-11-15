@@ -73,7 +73,8 @@ def remaining_risk(p: Position, spec: SymbolSpec) -> float:
 
 
 class RiskManager:
-    def __init__(self, limits: RiskLimits, db, day_reset_hour_utc: int = 0) -> None:
+    def __init__(self, limits: RiskLimits, db, day_reset_hour_utc: int = 0, quiet: bool = False) -> None:
+        self.quiet = quiet                    # backtests: do not log every simulated breach
         self.limits = limits
         self.db = db
         self.reset_hour = day_reset_hour_utc
@@ -127,10 +128,11 @@ class RiskManager:
             self.state.suspended, self.state.suspend_reason = True, reason
             self.state.suspended_at = now.isoformat()
             self.db.audit("trading_suspended", {"reason": reason})
-            log.error("TRADING SUSPENDED: %s", reason)
+            if not self.quiet:
+                log.error("TRADING SUSPENDED: %s", reason)
 
     # --------------------------------------------------------- account update
-    def update(self, account: AccountInfo, now: datetime) -> list[tuple[str, str]]:
+    def update(self, account: AccountInfo, now: datetime, persist: bool = True) -> list[tuple[str, str]]:
         """Roll daily/weekly anchors, track the high-water mark and trip
         circuit breakers. Returns newly raised (event, message) pairs."""
         s, events = self.state, []
@@ -166,7 +168,8 @@ class RiskManager:
         if account.margin > 0 and 0 < account.margin_level < self.limits.min_margin_level_pct:
             events.append(("margin_warning", f"margin level {account.margin_level:.0f}% is below "
                                              f"{self.limits.min_margin_level_pct:.0f}%"))
-        self._save()
+        if persist or events:
+            self._save()
         return events
 
     def daily_loss_pct(self, equity: float) -> float:
@@ -304,8 +307,12 @@ class RiskManager:
             elif (p.sl - p.price_open) * p.side.sign < 0:
                 reasons.append("existing position is not risk-free: adding would be averaging in")
         # --- sizing -------------------------------------------------------------
+        # Size for the WORST fill the order may receive (entry plus the maximum
+        # slippage tolerated by the order's deviation), so the risk budget holds
+        # even when the fill slips.
         risk_pct = L.risk_per_trade_pct * d.scale
-        volume, risk_amount = position_size(account.equity, risk_pct, entry, signal.sl, spec)
+        worst_entry = entry + side.sign * L.max_slippage_points * spec.point
+        volume, risk_amount = position_size(account.equity, risk_pct, worst_entry, signal.sl, spec)
         if volume <= 0:
             reasons.append("stop distance too wide for the risk budget at minimum lot size")
             return d

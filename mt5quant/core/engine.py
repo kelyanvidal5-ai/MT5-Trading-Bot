@@ -470,14 +470,11 @@ class TradingEngine:
         # Conflicting signals: opposite directions on the same symbol in the
         # same cycle. Keep the clearly stronger one, otherwise trade neither.
         viable = [c for c in candidates if not c["reasons"]]
-        sides = {c["signal"].side for c in viable}
-        if len(sides) > 1:
-            ranked = sorted(viable, key=lambda c: c["confidence"], reverse=True)
-            best = ranked[0]
-            rival = next(c for c in ranked if c["signal"].side is not best["signal"].side)
-            for c in viable:
-                if best["confidence"] - rival["confidence"] < 0.15 or c["signal"].side is not best["signal"].side:
-                    c["reasons"].append("conflicting signals across strategies")
+        keep = context.resolve_conflicts([c["signal"].side.sign for c in viable],
+                                         [c["confidence"] for c in viable])
+        for c, k in zip(viable, keep):
+            if not k:
+                c["reasons"].append("conflicting signals across strategies")
 
         executed = rejected = 0
         news_text = news_state.describe(now) if self.news else None

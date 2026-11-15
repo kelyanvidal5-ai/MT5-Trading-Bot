@@ -159,3 +159,19 @@ def select(strategy: Strategy, signals: pd.DataFrame, ctx: pd.DataFrame, min_con
     out["reject_reason"] = reason
     out["accepted"] = active & (reason == "")
     return out
+
+
+CONFLICT_MARGIN = 0.15
+
+
+def resolve_conflicts(sides: list[int], confidences: list[float]) -> list[bool]:
+    """Opposite signals on one symbol at the same time. Keep the clearly
+    stronger direction (confidence lead >= CONFLICT_MARGIN); otherwise trade
+    neither. Returns a keep-flag per candidate."""
+    if len(set(sides)) <= 1:
+        return [True] * len(sides)
+    best = max(range(len(sides)), key=lambda i: confidences[i])
+    rival = max((confidences[i] for i in range(len(sides)) if sides[i] != sides[best]))
+    if confidences[best] - rival < CONFLICT_MARGIN:
+        return [False] * len(sides)
+    return [s == sides[best] for s in sides]
