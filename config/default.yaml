@@ -1,0 +1,135 @@
+# MT5 Quant AI - default configuration (safe to commit: contains NO secrets).
+#
+# To customise, create config/local.yaml (git-ignored) with only the keys you
+# want to change; it is merged over this file. Secrets go in .env, never here.
+
+# backtest | paper | demo | live
+# "paper" = decisions are real, fills are simulated internally. Nothing is sent to a broker.
+# "live" is locked: see docs/LIVE_TRADING.md. Changing this value alone does NOT enable it.
+mode: paper
+
+# Instruments to monitor. These are generic FX majors used by the built-in
+# simulator. For DEMO/LIVE they MUST match your broker's exact symbol names
+# (many brokers add suffixes such as "EURUSD.m" / "EURUSDc"); the engine
+# verifies every symbol against the terminal at startup and refuses unknown ones.
+symbols:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+
+paper:
+  initial_balance: 10000
+  currency: USD
+  leverage: 30
+  data_source: synthetic      # synthetic | mt5 | bridge  (synthetic = random-walk demo feed, NOT real prices)
+  synthetic_seed: 7
+  synthetic_speed: 1.0
+
+# For demo/live: "mt5" = engine runs on the same Windows machine as the terminal,
+# "bridge" = engine talks to the gateway (python main.py bridge) on a Windows VPS.
+broker_backend: mt5
+
+strategies:
+  enabled:
+    - scalp_pullback
+    - intraday_vwap
+    - trend_ema
+    - donchian_breakout
+    - bb_reversion
+    - macd_momentum
+    - liquidity_sweep
+    - smc_orderblock
+    - vol_squeeze
+  min_confidence: 0.55
+  allow_unvalidated_in_paper: true   # DEMO/LIVE always require a VALIDATED status
+  use_meta_model: true
+  params: {}
+
+# Conservative initial envelope. Every value is validated against hard ceilings
+# in mt5quant/risk_management/limits.py - limits can be tightened here, loosened
+# only up to the ceiling, and never removed.
+risk:
+  risk_per_trade_pct: 0.25
+  max_daily_loss_pct: 1.0
+  max_weekly_loss_pct: 2.5
+  max_drawdown_pct: 5.0
+  max_open_positions: 3
+  max_positions_per_symbol: 1
+  max_total_open_risk_pct: 0.75
+  max_currency_exposure_risk_pct: 0.5
+  max_trades_per_day: 10
+  max_consecutive_losses: 4
+  cooldown_minutes_after_loss_streak: 240
+  max_spread_atr_ratio: 0.15
+  max_slippage_points: 20
+  min_margin_level_pct: 300
+  max_margin_usage_pct: 20
+  min_reward_risk: 1.0
+  max_order_errors_per_hour: 5
+  flatten_on_emergency: true
+
+news:
+  enabled: true
+  providers: [faireconomy]     # faireconomy | finnhub | file
+  refresh_minutes: 60
+  block_minutes_before: 30
+  block_minutes_after: 30
+  reduce_risk_minutes_before: 120
+  reduce_risk_factor: 0.5
+  close_before_tier1_minutes: 0
+  stale_after_hours: 36
+  fail_closed: true            # no calendar data => no new entries (demo/live)
+
+sessions:
+  avoid_rollover_minutes: 65
+  friday_cutoff_hours_before_close: 2.0
+  monday_open_delay_minutes: 60
+  holidays: []
+  max_tick_age_seconds: 120
+
+execution:
+  magic: 550100
+  max_retries: 2
+  retry_delay_seconds: 0.5
+  pending_expiry_bars: 3
+
+engine:
+  loop_interval_seconds: 5
+  heartbeat_seconds: 30
+  history_bars: 1500
+  equity_snapshot_seconds: 60
+  reconnect_max_backoff_seconds: 300
+  daily_report_hour_utc: 22
+  day_reset_hour_utc: 0
+
+dashboard:
+  host: 127.0.0.1
+  port: 8050
+
+bridge:
+  host: 127.0.0.1
+  port: 8787
+  max_clock_skew_seconds: 30
+  timeout_seconds: 10
+
+# Backtest / paper cost assumptions. Replace with your broker's real numbers.
+costs:
+  default_spread_points: 12
+  spread_points:
+    EURUSD: 8
+    GBPUSD: 12
+    USDJPY: 10
+  commission_per_lot_per_side: 3.5
+  slippage_points_mean: 2
+  execution_delay_ms: 250
+  rollover_spread_multiplier: 4
+  news_spread_multiplier: 3
+
+demo_gate:
+  min_demo_days: 30
+  min_demo_trades: 50
+  authorization_valid_days: 90
+
+database_path: data/mt5quant.db
+log_dir: logs
+log_level: INFO

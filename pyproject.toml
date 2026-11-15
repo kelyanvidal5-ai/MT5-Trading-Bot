@@ -1,0 +1,13 @@
+[project]
+name = "mt5quant"
+version = "0.1.0"
+description = "Modular autonomous trading platform for MetaTrader 5 (paper/demo by default)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.setuptools.packages.find]
+include = ["mt5quant*"]

@@ -1,0 +1,40 @@
+# --- secrets: never commit ---
+.env
+.env.*
+!.env.example
+config/local.yaml
+config/live_authorization.json
+*.pem
+*.key
+
+# --- runtime state ---
+logs/*
+!logs/.gitkeep
+data/*
+!data/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+models/
+reports/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+.coverage
+htmlcov/
+
+# --- os / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
